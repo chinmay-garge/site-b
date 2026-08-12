@@ -22,6 +22,11 @@ permissions:
 on:
   push:
     branches: [main]
+  # Push-only detection has a blind spot: drift introduced on the shared repo's
+  # side produces no commit here, so nothing triggers. A weekly sweep catches
+  # that, and also re-checks sites nobody has touched in a while.
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch: {}
 
 jobs:
