@@ -1,0 +1,110 @@
+name: Drift Detection
+
+# This repo is git-connected to its Staging theme, so anything edited directly
+# in the Shopify admin lands here as a commit. That is fine for CONTENT (JSON),
+# but for CODE (.liquid / .js) it means the site has silently diverged from the
+# shared theme in shopify-common — which is the source of truth.
+#
+# This job diffs the two and raises a single, continuously-updated issue.
+#
+# Deliberately excluded from the diff:
+#   *.vbt.*        build output; regenerated per deploy, never authored
+#   *.json         content, owned by editors here, not by the shared repo
+#
+# Improvement over a naive implementation: it UPDATES one open issue instead of
+# opening a new one on every push, and closes it automatically once drift is
+# resolved. Otherwise routine content edits bury the repo in duplicates.
+
+permissions:
+  contents: read
+  issues: write
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  detect:
+    if: ${{ vars.TARGET_REMOTE_REPO != '' }}
+    name: Drift vs ${{ vars.TARGET_REMOTE_REPO }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: 'Theme drift vs shared repo'
+      ISSUE_LABEL: drift
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: site }
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.TARGET_REMOTE_REPO }}
+          path: shared
+          ref: main
+          token: ${{ secrets.ACCESS_PAT }}
+
+      - name: Diff code files
+        id: diff
+        run: |
+          # Compare shared/theme (source of truth) against this repo's root.
+          diff -qr shared/theme site \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.json' \
+            --exclude='*.vbt.*' \
+            --exclude='*.md' \
+            > raw.txt 2>&1 || true
+
+          # "Files X and Y differ"  -> changed on one side
+          # "Only in <dir>: <file>" -> present on one side only
+          grep -E '^(Files|Only in)' raw.txt \
+            | grep -E '\.(liquid|js|css)([[:space:]]|$)' \
+            > drift.txt || true
+
+          if [ -s drift.txt ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+          cat drift.txt || echo "(no drift)"
+
+      - name: Build report
+        if: steps.diff.outputs.found == 'true'
+        run: |
+          {
+            echo "Code files in this repo no longer match \`${{ vars.TARGET_REMOTE_REPO }}\`'s \`theme/\`."
+            echo ""
+            echo "\`shopify-common\` is the source of truth: the next code deploy will OVERWRITE the files listed below."
+            echo "If a change here is worth keeping, port it into \`shopify-common\` first."
+            echo ""
+            echo '```'
+            cat drift.txt
+            echo '```'
+            echo ""
+            echo "_Updated by run [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) · commit ${{ github.sha }}_"
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the drift issue
+        if: steps.diff.outputs.found == 'true'
+        run: |
+          gh label create "$ISSUE_LABEL" --color b60205 -d "Theme code drifted from the shared repo" 2>/dev/null || true
+          NUM=$(gh issue list --label "$ISSUE_LABEL" --state open --json number -q '.[0].number')
+          if [ -z "$NUM" ]; then
+            gh issue create --title "$ISSUE_TITLE" --label "$ISSUE_LABEL" --body-file report.md
+          else
+            gh issue edit "$NUM" --body-file report.md
+            gh issue comment "$NUM" --body "Drift still present as of ${{ github.sha }}."
+            echo "Updated issue #$NUM"
+          fi
+
+      - name: Close the drift issue if clean
+        if: steps.diff.outputs.found == 'false'
+        run: |
+          NUM=$(gh issue list --label "$ISSUE_LABEL" --state open --json number -q '.[0].number')
+          if [ -n "$NUM" ]; then
+            gh issue comment "$NUM" --body "Drift resolved as of ${{ github.sha }}. Closing."
+            gh issue close "$NUM"
+          fi
+          echo "### No code drift detected." >> "$GITHUB_STEP_SUMMARY"
