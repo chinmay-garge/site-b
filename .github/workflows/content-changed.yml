@@ -1,0 +1,55 @@
+name: Notify content change
+
+# This repo is git-connected to its Staging theme, so an editor saving a change
+# in the Shopify admin lands here as a commit. When that happens, the promotion
+# checklist over in the shared repo is immediately out of date.
+#
+# Rather than relying on someone remembering to hit "refresh", this tells the
+# shared repo to rebuild that checklist automatically. Without it, an editor can
+# tick a list that no longer matches the store and promote the wrong thing —
+# which is worse than having no list at all, because the list looks authoritative.
+#
+# Requires:
+#   variable SITE_KEY           e.g. sb-a  (which site this repo is)
+#   variable TARGET_REMOTE_REPO e.g. chinmay-garge/shopify-common
+#   secret   ACCESS_PAT         PAT with repo scope on the shared repo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'templates/**.json'
+      - 'sections/*.json'
+      - 'config/settings_data.json'
+  workflow_dispatch: {}
+
+jobs:
+  notify:
+    if: ${{ vars.SITE_KEY != '' && vars.TARGET_REMOTE_REPO != '' }}
+    name: Refresh ${{ vars.SITE_KEY }} checklist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the shared repo to rebuild this site's checklist
+        env:
+          GH_TOKEN: ${{ secrets.ACCESS_PAT }}
+          SITE_KEY: ${{ vars.SITE_KEY }}
+          TARGET: ${{ vars.TARGET_REMOTE_REPO }}
+        run: |
+          set -euo pipefail
+
+          # A here-doc keeps the nested client_payload readable; gh's -F flag
+          # cannot express nested objects cleanly.
+          cat > payload.json <<EOF
+          {
+            "event_type": "content-changed",
+            "client_payload": { "site_key": "${SITE_KEY}" }
+          }
+          EOF
+
+          if gh api --method POST "repos/${TARGET}/dispatches" --input payload.json; then
+            echo "Asked ${TARGET} to refresh the ${SITE_KEY} checklist."
+            echo "### Requested a checklist refresh for \`${SITE_KEY}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Could not reach ${TARGET}. Check that ACCESS_PAT is set here and has repo scope on the shared repo."
+            exit 1
+          fi
