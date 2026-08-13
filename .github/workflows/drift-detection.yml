@@ -21,7 +21,10 @@ permissions:
 
 on:
   push:
-    branches: [main]
+    # Both branches mirror a theme, so both can drift: `staging` from the Staging
+    # theme, `main` from the live one. Watching only `main` missed everything
+    # happening on the branch that actually receives editor and CI activity.
+    branches: [main, staging]
   # Push-only detection has a blind spot: drift introduced on the shared repo's
   # side produces no commit here, so nothing triggers. A weekly sweep catches
   # that, and also re-checks sites nobody has touched in a while.

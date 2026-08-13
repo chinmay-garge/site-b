@@ -16,7 +16,11 @@ name: Notify content change
 
 on:
   push:
-    branches: [main]
+    # `staging`, not `main`. Editors work in the Staging theme, which Shopify
+    # connects to this branch — so that is where their commits land. Watching
+    # `main` meant this never fired for a real editor change, only for the
+    # simulated ones made before the themes were connected.
+    branches: [staging]
     paths:
       - 'templates/**.json'
       - 'sections/*.json'
