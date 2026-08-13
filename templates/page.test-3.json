@@ -1,0 +1,12 @@
+{
+  "sections": {
+    "hero": {
+      "type": "sandbox-hero",
+      "settings": {
+        "heading": "Test 3",
+        "use_h1": true
+      }
+    }
+  },
+  "order": ["hero"]
+}
