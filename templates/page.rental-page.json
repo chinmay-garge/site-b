@@ -1,0 +1,12 @@
+{
+  "sections": {
+    "hero": {
+      "type": "sandbox-hero",
+      "settings": {
+        "heading": "Rental Page",
+        "use_h1": true
+      }
+    }
+  },
+  "order": ["hero"]
+}
