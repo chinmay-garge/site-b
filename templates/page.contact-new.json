@@ -3,10 +3,12 @@
     "hero": {
       "type": "sandbox-hero",
       "settings": {
-        "heading": "Contact New",
+        "heading": "Verifying the fix",
         "use_h1": true
       }
     }
   },
-  "order": ["hero"]
+  "order": [
+    "hero"
+  ]
 }
